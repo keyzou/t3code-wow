@@ -94,3 +94,53 @@ test('reasoning levels: read from the model, set on a selection', () => {
   assert.throws(() => withEffort(sel, 'ultrathink', providers), /doesn't offer ultrathink/);
   assert.throws(() => withEffort({ instanceId: 'claude', model: 'plain' }, 'low', providers), /no reasoning levels/);
 });
+
+test('a connection that dies before the thread list arrives asks again without finished subagents', async () => {
+  const { T3Client } = await import('../src/t3.js');
+  const real = globalThis.WebSocket;
+  const sockets = [];
+  globalThis.WebSocket = class {
+    static OPEN = 1;
+    constructor() {
+      this.readyState = 1;
+      this.sent = [];
+      sockets.push(this);
+    }
+    send(data) {
+      this.sent.push(JSON.parse(data));
+    }
+    close() {}
+  };
+  try {
+    const logged = [];
+    const c = new T3Client({ tokenProvider: async () => 'x', log: (m) => logged.push(m), label: 'far' });
+    c.scheduleReconnect = () => {};
+    const shell = (ws) => ws.sent.find((m) => m.tag === 'orchestration.subscribeShell');
+    const connect = () => {
+      c.open('ws://t3.invalid/ws');
+      const ws = sockets.at(-1);
+      ws.onopen();
+      return ws;
+    };
+
+    // The list arrived: a later drop keeps the full list.
+    let ws = connect();
+    assert.equal(shell(ws).payload.omitIdleSubagents, false);
+    c.backoff = 8000;
+    ws.onmessage({ data: JSON.stringify({ _tag: 'Chunk', requestId: shell(ws).id, values: [{ kind: 'snapshot', snapshot: { threads: [] } }] }) });
+    assert.equal(c.backoff, 1000);
+    ws.onclose();
+    ws = connect();
+    assert.equal(shell(ws).payload.omitIdleSubagents, false);
+    assert.equal(logged.some((m) => /finished subagents/.test(m)), false);
+
+    // Dropped before the list: the next connection asks for the short one, and says so once.
+    ws.onclose();
+    ws = connect();
+    assert.equal(shell(ws).payload.omitIdleSubagents, true);
+    ws.onclose();
+    assert.equal(logged.filter((m) => /^far: .*finished subagents/.test(m)).length, 1);
+  } finally {
+    globalThis.WebSocket = real;
+  }
+});

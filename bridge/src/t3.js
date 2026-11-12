@@ -183,6 +183,8 @@ export class T3Client extends EventEmitter {
     this.error = null;
     this.backoff = 1000;
     this.stopped = false;
+    // Set once a connection dies before its thread list arrives (see `open`).
+    this.slimShell = false;
     this.origin = null;
   }
 
@@ -246,7 +248,7 @@ export class T3Client extends EventEmitter {
       let opened = false;
       ws.onopen = () => {
         opened = true;
-        this.backoff = 1000;
+        this.shellSeen = false;
         this.setState('connected');
         this.subscribeAll();
         resolve();
@@ -261,6 +263,13 @@ export class T3Client extends EventEmitter {
         for (const p of this.pending.values()) p.reject?.(new Error('connection closed'));
         this.pending.clear();
         if (opened) {
+          // With finished subagents the first thread list can be one message of several
+          // megabytes, and Node 24's WebSocket drops the connection on it (measured: 4.5 MB
+          // fails on 24.14.1, 0.8 MB passes). Ask for the short list from then on.
+          if (!this.shellSeen && !this.slimShell) {
+            this.slimShell = true;
+            this.log(`${this.label}: the connection closed before the thread list arrived; asking again without finished subagents`);
+          }
           this.setState('offline', 'connection closed');
           this.scheduleReconnect();
         }
@@ -337,10 +346,11 @@ export class T3Client extends EventEmitter {
 
   subscribeAll() {
     // Idle subagent threads too: a thread's family is read from this shell. They only
-    // cost the first snapshot, since an idle thread sends no updates.
+    // cost the first snapshot, since an idle thread sends no updates. Without them
+    // (`slimShell`) a thread's family shows only the subagents still at work.
     this.request(
       'orchestration.subscribeShell',
-      { omitIdleSubagents: false, omitOlderSettled: true },
+      { omitIdleSubagents: this.slimShell, omitOlderSettled: true },
       { onChunk: (v) => this.onShell(v), timeout: 0 },
     ).catch((err) => this.log(`shell subscription ended: ${err.message}`));
     this.request('subscribeServerConfig', {}, { onChunk: (v) => this.onConfig(v), timeout: 0 }).catch((err) =>
@@ -351,6 +361,9 @@ export class T3Client extends EventEmitter {
   onShell(item) {
     if (!item || typeof item !== 'object') return;
     if (item.kind === 'snapshot') {
+      // The connection works: start the next reconnect from a short wait again.
+      this.shellSeen = true;
+      this.backoff = 1000;
       const snap = item.snapshot || {};
       // Follow-up snapshot frames can carry only projects (threads: []): keep threads.
       if (Array.isArray(snap.threads) && snap.threads.length > 0) {
