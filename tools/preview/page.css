@@ -1,0 +1,50 @@
+/* A schematic of the T3 Code window. Only the transcript's rows are drawn from the
+   addon's own numbers; the frame around them is here for scale and context. */
+:root { --gold: #ffd100; --line: #5c4a2a; --font: "Noto Sans", sans-serif; --track: 0em; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0b0a09; }
+body { font-family: var(--font); letter-spacing: var(--track); color: #fff; padding: 14px; width: max-content; }
+.caption { font: 12px/1.5 "Noto Sans", sans-serif; letter-spacing: 0; color: #b9b3a6; margin: 0 0 8px; max-width: 900px; }
+.caption b { color: #fff; font-weight: 600; }
+
+.window { position: relative; width: 940px; height: 640px; background: #1b1713; border: 2px solid #6b5a35; border-radius: 4px; overflow: hidden; }
+.window .title { position: absolute; top: 0; left: 0; right: 0; height: 22px; background: #2a2118; border-bottom: 1px solid var(--line); text-align: center; color: var(--gold); font-size: 12px; line-height: 22px; }
+.window .subtitle { position: absolute; top: 28px; left: 110px; right: 110px; text-align: center; color: var(--gold); font-size: 16px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.window .status { position: absolute; top: 49px; left: 0; right: 0; text-align: center; color: #1eff00; font-size: 10px; line-height: 12px; }
+.pane { position: absolute; top: 62px; bottom: 28px; background: #14110e; border: 1px solid var(--line); }
+.pane.left { left: 6px; width: 300px; padding: 8px; }
+.pane.left .box { border: 1px solid var(--line); height: 24px; margin-bottom: 8px; font-size: 12px; line-height: 22px; padding: 0 8px; color: #ddd; background: #0e0c0a; }
+.pane.left .group { color: var(--gold); text-align: center; font-size: 14px; border: 1px solid var(--line); height: 26px; line-height: 24px; margin-bottom: 6px; }
+.pane.left .thread { height: 50px; padding: 5px 8px; font-size: 12px; }
+.pane.left .thread .name { color: var(--gold); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pane.left .thread .meta { color: #9d9d9d; font-size: 11px; margin-top: 4px; }
+.pane.left .thread.sel { outline: 2px solid #c9a227; background: #2a2412; }
+.pane.right { right: 6px; left: 310px; border: 0; background: none; }
+.sidebar-hidden .pane.left { display: none; }
+.sidebar-hidden .pane.right { left: 6px; }
+.header { position: absolute; top: 4px; left: 4px; right: 4px; height: 30px; background: #221b14; border: 1px solid var(--line); font-size: 12px; line-height: 28px; padding: 0 12px; color: #fff; }
+.header .btn { float: right; margin: 3px 0 0 4px; height: 22px; line-height: 20px; padding: 0 16px; background: #5a1010; border: 1px solid #8a6a2a; color: var(--gold); }
+.transcript { position: absolute; top: 38px; bottom: 100px; left: 2px; right: 0; background: #0f0d0b; border: 1px solid var(--line); }
+.scrollbox { position: absolute; top: 4px; bottom: 4px; left: 4px; right: 20px; overflow: hidden; }
+.scrollbar { position: absolute; top: 4px; bottom: 4px; right: 5px; width: 8px; background: #1d1813; }
+.scrollbar .thumb { position: absolute; left: 0; right: 0; background: #7a6a45; border-radius: 3px; }
+.scrollbar .notch { position: absolute; left: -9px; width: 6px; border: 1px solid #ff5ad1; border-right: 0; }
+.composer { position: absolute; bottom: 2px; height: 92px; left: 2px; right: 2px; background: #0f0d0b; border: 1px solid var(--line); color: #7d7d7d; font-size: 14px; padding: 8px 10px; }
+.bar { position: absolute; bottom: 3px; left: 6px; right: 6px; height: 22px; }
+.bar .btn { display: inline-block; height: 22px; line-height: 20px; padding: 0 28px; background: #5a1010; border: 1px solid #8a6a2a; color: var(--gold); font-size: 12px; margin-right: 6px; }
+.bar .btn.send { position: absolute; right: 0; margin: 0; }
+
+.strip { position: relative; background: #0f0d0b; border: 1px solid var(--line); margin-top: 14px; }
+
+/* Rows. Sizes come from the addon's STYLE and LAYOUT tables, set inline by page.js. */
+.rows { position: relative; }
+.row { position: relative; display: flow-root; }
+/* Text is drawn over a row's backgrounds, as the game's ARTWORK layer is over BACKGROUND. */
+.row .text { position: relative; z-index: 1; white-space: pre-wrap; overflow-wrap: break-word; text-shadow: 1px 1px 0 #000; }
+.row .abs.text { position: absolute; }
+.row .tint { position: absolute; left: 2px; right: 2px; bottom: 0; }
+.row .abs { position: absolute; }
+.tofu { display: inline-block; width: 0.62em; height: 0.78em; border: 1px solid currentColor; margin: 0 0.06em; vertical-align: -0.04em; }
+.check { position: absolute; border: 1px solid #8a7a50; background: #1a1a1a; color: var(--gold); text-align: center; }
+.icon { display: inline-block; width: 1.1em; height: 1.1em; vertical-align: -0.2em; }
+.icon svg { display: block; width: 100%; height: 100%; }

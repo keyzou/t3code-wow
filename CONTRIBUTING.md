@@ -51,6 +51,8 @@ On macOS, Homebrew doesn't package Lua 5.1: `brew install luajit` covers the Lua
 
 On Windows, `npm test` skips the tests that need `lua5.1` when it isn't installed, and says so. It registers a logon task under a throwaway name for about 15 seconds and removes it again. Two tests draw a small window on the real screen, one to read a strip off it and one that stops responding for 8 seconds. They only run when you say where the window goes: `$env:T3WOW_SCREEN_TEST = '100,100'; npm test` in PowerShell.
 
+To see how a conversation would be drawn without starting the game, `node tools/preview/render.mjs tools/preview/fixtures/status-report.md` writes a picture of the window and of the whole transcript ([tools/preview/README.md](tools/preview/README.md) says what it can and can't show).
+
 `tools/wowstub.lua` stands in for the WoW API. Its widget methods come from the client's own API documentation, so calling a method that doesn't exist fails in tests the way it would in game.
 
 Before changing how the addon and bridge talk, read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [AGENTS.md](AGENTS.md): several things that look like workarounds are deliberate, measured limits of the game client.
