@@ -52,15 +52,24 @@ export async function discoverTailscale(host) {
   return urls;
 }
 
+// SSH hands the command to the remote user's login shell, which may not be POSIX
+// (Nushell rejects `>&2` and `&&`). Run it under `sh -c '…'`, which bash, zsh, fish and
+// Nushell all pass through unchanged. The command must not contain a single quote.
+export function posixRemote(command) {
+  if (command.includes("'")) throw new Error('remote command contains a single quote');
+  return `sh -c '${command}'`;
+}
+
 // Mint a session token on the remote machine with its own `t3` CLI.
 export async function mintRemote(sshHost, label = 'WoW bridge') {
-  const remote = [
+  label = label.replace(/["'$`\\]/g, '');
+  const remote = posixRemote([
     'for t in "$HOME/.local/bin/t3" "$HOME/.t3/bin/t3" t3; do',
     '  if command -v "$t" >/dev/null 2>&1; then',
     `    exec "$t" auth session issue --scope orchestration:read --scope orchestration:operate --ttl 30d --label "${label}" --json;`,
     '  fi;',
     'done; echo "t3 not found on this machine" >&2; exit 127',
-  ].join(' ');
+  ].join(' '));
   const out = await run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', sshHost, remote], 120000);
   const start = out.indexOf('{');
   const json = JSON.parse(out.slice(start));
@@ -70,7 +79,7 @@ export async function mintRemote(sshHost, label = 'WoW bridge') {
 
 export async function revokeRemote(sshHost, sessionId) {
   if (!sessionId) return;
-  const remote = `for t in "$HOME/.local/bin/t3" "$HOME/.t3/bin/t3" t3; do command -v "$t" >/dev/null 2>&1 && exec "$t" auth session revoke ${sessionId}; done`;
+  const remote = posixRemote(`for t in "$HOME/.local/bin/t3" "$HOME/.t3/bin/t3" t3; do command -v "$t" >/dev/null 2>&1 && exec "$t" auth session revoke ${sessionId}; done`);
   await run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', sshHost, remote], 60000);
 }
 
