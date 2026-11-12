@@ -929,11 +929,12 @@ test('a thread waiting mid-run on its subagent can still be stopped, and churns 
   assert.deepEqual(second, first, 'tool calls during the run change nothing the game is sent');
 });
 
-test('a subagent thread waiting on its own subagent stays listed', () => {
+test('a subagent thread waiting on its own subagent is waiting, and left to its parent', () => {
   const { b } = fakeBridge();
   b.t3.threads.set('kid', { id: 'kid', title: 'Kid', projectId: 'p1', status: 'running', activityRunStatus: 'running', lineage: { parentThreadId: 't1' },
     updatedAt: new Date().toISOString(), pendingBackgroundTasks: [{ taskId: 'g', kind: 'subagent' }] });
-  assert.equal(b.buildSnapshot().threads.find((x) => x.id === 'kid')?.s, 'waiting');
+  assert.equal(b.statusOf(b.t3.threads.get('kid')), 'waiting');
+  assert.ok(!b.buildSnapshot().threads.some((x) => x.id === 'kid'), 'not a row of its own');
 });
 
 test('a thread whose child threads still run is waiting on them, as in T3 Code', () => {
@@ -970,7 +971,7 @@ test('ending a turn into waiting is not announced; the wait ending is', async ()
   assert.deepEqual(said, ['open'], 'subagent threads are never announced');
 });
 
-test('running subagent threads are listed, idle ones are not', async () => {
+test('a subagent thread is listed only while it needs you; a fork or side chat while it is busy', async () => {
   const { T3Client } = await import('../src/t3.js');
   const c = new T3Client({ tokenProvider: async () => 'x' });
   c.onShell({ kind: 'snapshot', snapshot: { threads: [{ id: 'kid', lineage: { parentThreadId: 'p' }, status: 'running', activityRunStatus: 'running' }] } });
@@ -982,9 +983,15 @@ test('running subagent threads are listed, idle ones are not', async () => {
   const now = new Date().toISOString();
   b.t3.threads.set('busy-kid', { id: 'busy-kid', title: 'Busy', projectId: 'p1', status: 'running', activityRunStatus: 'running', lineage: { parentThreadId: 't1' }, updatedAt: now });
   b.t3.threads.set('idle-kid', { id: 'idle-kid', title: 'Idle', projectId: 'p1', status: 'completed', lineage: { parentThreadId: 't1' }, updatedAt: now });
+  b.t3.threads.set('asking-kid', { id: 'asking-kid', title: 'Asking', projectId: 'p1', status: 'running', activityRunStatus: 'running', pendingRuntimeRequest: { kind: 'approval' }, lineage: { parentThreadId: 't1' }, updatedAt: now });
+  b.t3.threads.set('plan-kid', { id: 'plan-kid', title: 'Plan', projectId: 'p1', status: 'completed', hasActionableProposedPlan: true, lineage: { parentThreadId: 't1', relationshipToParent: 'subagent' }, updatedAt: now });
+  b.t3.threads.set('busy-fork', { id: 'busy-fork', title: 'Fork', projectId: 'p1', status: 'running', activityRunStatus: 'running', lineage: { parentThreadId: 't1', relationshipToParent: 'fork' }, updatedAt: now });
+  b.t3.threads.set('busy-side', { id: 'busy-side', title: 'Side', projectId: 'p1', status: 'running', activityRunStatus: 'running', lineage: { parentThreadId: 't1', relationshipToParent: 'fork', sideChat: true }, updatedAt: now });
   const ids = b.buildSnapshot().threads.map((t) => t.id);
-  assert.ok(ids.includes('busy-kid'), 'a running subagent thread is listed');
-  assert.ok(!ids.includes('idle-kid'), 'an idle one is not');
+  assert.ok(!ids.includes('busy-kid'), 'a subagent that is just working is not listed: its parent says so');
+  assert.ok(!ids.includes('idle-kid'), 'nor an idle one');
+  assert.ok(ids.includes('asking-kid') && ids.includes('plan-kid'), 'one that waits for an approval or has a plan to accept is');
+  assert.ok(ids.includes('busy-fork') && ids.includes('busy-side'), 'a fork or a side chat the player made is listed while it runs');
 });
 
 const at = (min) => new Date(Date.UTC(2026, 10, 1, 0, min)).toISOString();
@@ -1037,8 +1044,8 @@ test('the open thread’s family: its children, its parent, and its own header w
   assert.equal(me.last, undefined);
 
   const busy = view(b, 'busy');
-  assert.ok(busy.threads.some((t) => t.id === 'busy'), 'a working subagent is listed');
-  assert.equal(busy.fam.me, undefined, 'so it needs no header of its own');
+  assert.ok(!busy.threads.some((t) => t.id === 'busy'), 'a working subagent is not listed either');
+  assert.deepEqual([busy.fam.me.id, busy.fam.me.s], ['busy', 'working'], 'so it gets its header the same way');
   assert.equal(busy.fam.up.id, 'lead');
 
   const lone = view(b, 't1');
@@ -1108,7 +1115,7 @@ test('the family part keeps its hash through replies and a child’s tool calls,
   update('busy', { updatedAt: new Date(Date.now() + 1000).toISOString() });
   const later = b.buildSnapshot();
   assert.notEqual(later.x.v, first.x.v, 'the transcript changed');
-  assert.equal(later.threads.find((t) => t.id === 'busy').l, 'Running ls', 'the child’s activity changed');
+  assert.ok(!later.threads.some((t) => t.id === 'busy'), 'the working child has no row, so its tool calls send nothing');
   assert.equal(later.x.f, first.x.f);
 
   b.t3.on('change', (ev) => b.onT3Change(ev));

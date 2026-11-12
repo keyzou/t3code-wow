@@ -36,6 +36,10 @@ const sec = (iso) => (iso ? Math.floor(Date.parse(iso) / 1000) : undefined);
 // in its hello, and a publish leaves out a part whose hash hasn't changed since.
 // T3 Code keeps the status of a subagent the provider started (Claude's own) on its
 // parent's projection; the subagent's thread stays idle while it runs.
+// A thread an agent started for itself, as opposed to a fork or a side chat the player made.
+const isSubagent = (t) => !!t.lineage?.parentThreadId && !t.lineage.sideChat && t.lineage.relationshipToParent !== 'fork';
+// Statuses only the player can move on: an approval or an answer, a plan to accept.
+const NEEDS_YOU = new Set(['input', 'plan']);
 const SUBAGENT_STATUS = { running: 'working', failed: 'failed' };
 
 const fingerprint = (value) => createHash('sha1').update(JSON.stringify(value)).digest('hex').slice(0, 16);
@@ -898,8 +902,10 @@ export class Bridge {
     const usedProjects = new Set();
     let threads = [...t3.threads.values()]
       .map((t) => ({ t, s: this.statusOf(t) }))
-      // Subagent threads only while they're busy, like T3's own sidebar.
-      .filter(({ t, s }) => s !== 'archived' && (!t.lineage?.parentThreadId || ACTIVE.has(s) || s === 'waiting'));
+      // A fork or a side chat is listed only while it's busy, like T3's own sidebar. A
+      // subagent is listed only while it needs the player: while it works or waits, its
+      // parent's row already says so, and the parent's family bar opens it.
+      .filter(({ t, s }) => s !== 'archived' && (!t.lineage?.parentThreadId || (isSubagent(t) ? NEEDS_YOU.has(s) : ACTIVE.has(s) || s === 'waiting')));
     threads.sort((a, b) => ORDER[a.s] - ORDER[b.s] || Date.parse(b.t.updatedAt) - Date.parse(a.t.updatedAt));
     let settled = 0;
     threads = threads.filter(({ s }) => s !== 'settled' || ++settled <= 30).slice(0, 90);
