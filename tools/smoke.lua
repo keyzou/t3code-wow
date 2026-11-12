@@ -277,6 +277,84 @@ do
 	end
 end
 
+-- A message drawn block by block: one row per block, spaced by what follows it.
+do
+	local long = {}
+	for i = 1, 70 do long[i] = "line " .. i end
+	local wide = {}
+	for i = 1, 12 do wide[i] = string.rep("w", 30) end
+	local view = { id = ns.viewId }
+	view.msgs = {
+		{ r = "u", t = "an older bridge's whole message", at = 10, n = 1 },
+		{ r = "a", at = 20, n = 2, b = {
+			{ "h", 2, "Plan" }, { "p", "Intro" }, { "l", 0, "1.", "one" }, { "l", 1, "•", "nested" }, { "l", 0, "[x]", "done" },
+			{ "c", 0, table.concat(long, "\n") }, { "q", 1, "quoted" }, { "q", 1, "more" }, { "r" },
+			{ "t", "lr", { { "a", "b" }, { "x", "2" } } },
+			{ "t", "llllllllllll", { wide, wide } },
+		} },
+	}
+	data.gen = data.gen + 10 -- past the refusals applied above
+	data.view = view
+	ns.Transcript.scrollBox._scrolledTo = nil
+	ns.Transport:Apply(data)
+	local to = ns.Transcript.scrollBox._scrolledTo
+	check(type(to) == "table" and to.index == 3 and to.alignment == ScrollBoxConstants.AlignBegin, "an answer taller than the list opens at its first line")
+	local seen = {}
+	for _, r in ipairs(ns.Transcript.scrollBox._rows) do
+		local ed = r.ed
+		if ed.kind == "head" or ed.kind == "block" or ed.kind == "trow" then
+			seen[#seen + 1] = ed.kind == "head" and ("head:" .. ed.role) or ed.style .. (ed.kind == "block" and ed.style == "code" and ((ed.open and "<" or "") .. (ed.close and ">" or "")) or "")
+			check(ed.height and ed.height > 0, "row has a height: " .. seen[#seen])
+		end
+	end
+	check(table.concat(seen, " ") == "head:u p head:a h2 p li li li code< code code> quote quote hr trow trow p",
+		"blocks drawn as rows, long code in parts, a table too wide as lines: " .. table.concat(seen, " "))
+	local rows = {}
+	for _, r in ipairs(ns.Transcript.scrollBox._rows) do rows[#rows + 1] = r.ed end
+	local L = ns.Transcript.LAYOUT
+	check(rows[4].bottom == L.gapHeading and rows[5].bottom == L.gapList and rows[6].bottom == L.gapList, "a heading, a list's lead-in and its items sit close to what follows")
+	check(rows[9].bottom == 0 and rows[10].bottom == 0 and rows[11].bottom == L.codePad + L.gap, "the parts of a code block join up")
+	check(rows[12].joined and not rows[13].joined, "consecutive quotes share one bar")
+	check(rows[6].indent > rows[5].indent and rows[5].width > rows[6].width, "a nested item is indented and wraps narrower")
+	check(ns.Transcript.PlainText(view.msgs[2]):find("one\nnested\ndone", 1, true) ~= nil, "blocks read aloud as plain text")
+	check(ns.Transcript.view._pan == L.pan, "the wheel step is set, not left to the first row's height")
+	check(ns.Transport:Flags():find("b", 1, true) ~= nil, "the hello says this addon draws blocks")
+	-- The stub loads any font file. A client that can't must not claim the font.
+	check(ns.Transport:Flags():find("m", 1, true) ~= nil, "the hello says the fixed-width font loaded")
+	ns.Transcript.mono = false
+	check(ns.Transport:Flags():find("m", 1, true) == nil, "no fixed-width flag when the font did not load")
+	Stub.rejectFonts = true
+	ns.Transcript.mono = nil
+	check(ns.Transport:Flags():find("m", 1, true) == nil and ns.Transcript.mono == false, "a font file the client refuses, even with an error, leaves the hello intact")
+	Stub.rejectFonts = nil
+	ns.Transcript.mono = nil
+	check(ns.StripMarkup("a |TInterface\\RaidFrame\\ReadyCheck-Ready:0|t |cffffd100b|r c||d") == "a  b c|d", "pictures and colours are left out of what is read aloud")
+
+	-- A short answer, and one watched while it was written, stay at the end.
+	view.msgs = { { r = "u", t = "hi", at = 30, n = 1 }, { r = "a", at = 40, n = 2, b = { { "p", "short" } } } }
+	data.gen = data.gen + 1
+	ns.Transport:Apply(data)
+	check(ns.Transcript.scrollBox._scrolledTo == "end", "an answer that fits is shown from the end")
+	local tall = {}
+	for i = 1, 60 do tall[i] = { "p", "paragraph " .. i } end
+	view.msgs = { { r = "u", t = "hi", at = 50, n = 1 }, { r = "a", at = 60, n = 2, live = true, b = tall } }
+	data.gen = data.gen + 1
+	ns.Transport:Apply(data)
+	view.msgs[2].live = nil
+	data.gen = data.gen + 1
+	ns.Transport:Apply(data)
+	check(ns.Transcript.scrollBox._scrolledTo == "end", "an answer watched while it was written is not scrolled back to its start")
+
+	-- The saved text size applies once the settings have loaded.
+	local saved = ns.db.settings.textSize
+	ns.db.settings.textSize = "large"
+	ns:Fire("Loaded")
+	check(ns.Transcript.STYLE.p.size == 14 and L.maxText == L.lineLength * 14, "the saved text size is used after the settings load")
+	check(L.pan == L.panLines * 18 and ns.Transcript.view._pan == L.pan, "the wheel step follows the text size")
+	ns.db.settings.textSize = saved
+	ns.Transcript:BuildStyle()
+end
+
 -- Question / approval rendering
 data.gen = data.gen + 10
 data.view = data.view or { id = ns.viewId }

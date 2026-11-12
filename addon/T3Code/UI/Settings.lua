@@ -88,6 +88,24 @@ function S:Create(page)
 		{ value = "xlarge", label = "Extra large" },
 	}, ns.db.settings.windowScale or "auto")
 	self.size = size
+	y = y - 40
+
+	local textLabel = UI.Text(page, "GameFontHighlight")
+	textLabel:SetPoint("TOPLEFT", 22, y - 12)
+	textLabel:SetText("Text size")
+	local text = UI.Dropdown(page, 240, function(value)
+		ns.db.settings.textSize = value
+		ns.Transcript:BuildStyle()
+		ns.Transcript:Relayout()
+	end)
+	text:SetPoint("LEFT", size, "LEFT", 0, -40)
+	text:SetOptions({
+		{ value = "small", label = "Small" },
+		{ value = "medium", label = "Medium" },
+		{ value = "large", label = "Large" },
+		{ value = "xlarge", label = "Extra large" },
+	}, ns.db.settings.textSize or "medium")
+	self.text = text
 	y = y - 48
 
 	local infoTitle = UI.Text(page, "GameFontNormal")
@@ -113,7 +131,7 @@ function S:Create(page)
 	local report = UI.Button(page, "Report a problem", 150, function() ns.Main:ShowPage("threads") ns.Main:Report() end)
 	report:SetPoint("LEFT", selftest, "RIGHT", 10, 0)
 	UI.Tooltip(report, "Report a problem", "Puts diagnostics in the message box and attaches a screenshot, for the thread you have open (or a new one).")
-	self.controls = { dd, size, test, reload, resetTracker, selftest, report }
+	self.controls = { dd, size, text, test, reload, resetTracker, selftest, report }
 end
 
 local SIGNAL_TEXT = {
@@ -131,6 +149,8 @@ function S:Refresh()
 	self.voice:Update()
 	self.size.value = ns.db.settings.windowScale or "auto"
 	self.size:Update()
+	self.text.value = ns.db.settings.textSize or "medium"
+	self.text:Update()
 	local T = ns.Transport
 	local b = ns.Store.data.bridge or {}
 	local lines = {

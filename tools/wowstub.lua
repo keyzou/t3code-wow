@@ -19,6 +19,7 @@ local GETTERS = {
 	GetChecked = function(self) return self._checked end,
 	HasFocus = function(self) return self._focus or false end,
 	GetStringHeight = function(self) local t = (self._text or "") local n = 1 for _ in t:gmatch("\n") do n = n + 1 end return n * 14 + math.floor(#t / 80) * 14 end,
+	GetStringWidth = function(self) return #((self._text or ""):gsub("|T.-|t", "MM"):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) * 6.5 end,
 	GetScrollPercentage = function() return 1 end,
 	HasScrollableExtent = function() return false end,
 	IsEnabled = function(self) return self._enabled ~= false end,
@@ -51,6 +52,14 @@ local SETTERS = {
 	SetHeight = function(self, h) self._h = h end,
 	SetSize = function(self, w, h) self._w, self._h = w, h end,
 	SetText = function(self, t) self._text = t and tostring(t) or "" end,
+	-- Stub.rejectFonts stands for a client that won't load a font file from an addon.
+	SetFont = function(self, file, size)
+		if Stub.rejectFonts and tostring(file):find("AddOns", 1, true) then error("invalid font asset") end
+		self._font, self._fontSize = file, size
+		return true
+	end,
+	ScrollToElementDataIndex = function(self, index, alignment) self._scrolledTo = { index = index, alignment = alignment } end,
+	ScrollToEnd = function(self) self._scrolledTo = "end" end,
 	Show = function(self)
 		local was = self._shown
 		self._shown = true
@@ -227,7 +236,10 @@ _G.NORMAL_FONT_COLOR = { GetRGB = function() return 1, 0.82, 0 end }
 _G.HIGHLIGHT_FONT_COLOR = { GetRGB = function() return 1, 1, 1 end }
 _G.OBJECTIVE_TRACKER_COLOR = { Header = { r = 0.75, g = 0.61, b = 0 } }
 _G.SOUNDKIT = setmetatable({}, { __index = function(_, k) return k end })
-_G.ScrollBoxConstants = { RetainScrollPosition = true, DiscardScrollPosition = false, NoScrollInterpolation = true, UpdateImmediately = true }
+_G.ScrollBoxConstants = {
+	RetainScrollPosition = true, DiscardScrollPosition = false, NoScrollInterpolation = true, UpdateImmediately = true,
+	AlignBegin = 0, AlignCenter = 0.5, AlignEnd = 1, AlignNearest = -1,
+}
 _G.Enum = setmetatable({}, { __index = function() return setmetatable({}, { __index = function(_, k) return k end }) end })
 
 -- Like Forever: PlaySoundFile always says it will play and returns a handle; only a
@@ -292,7 +304,7 @@ _G.CreateScrollBoxListLinearView = function()
 	function view:SetElementExtentCalculator(f) self._extent = f end
 	function view:SetElementExtent() end
 	function view:SetElementInitializer(template, init) self._factory = function(factory) factory(template, init) end end
-	function view:SetPanExtent() end
+	function view:SetPanExtent(extent) self._pan = extent end
 	return view
 end
 _G.ScrollUtil = { InitScrollBoxListWithScrollBar = function(box, _, view) box._view = view end }

@@ -101,6 +101,7 @@ local DEFAULTS = {
 		steerFollowUps = true,
 		quietInstances = true,
 		windowScale = "auto",
+		textSize = "medium",
 		padChord = "auto",
 	},
 	drafts = {},

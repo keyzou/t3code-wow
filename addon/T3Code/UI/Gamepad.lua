@@ -598,7 +598,7 @@ ticker:SetScript("OnUpdate", function(_, elapsed)
 		G.stickAt = now + REPEAT_NEXT
 	end
 	if G.scrollY and G.scrollY ~= 0 then
-		ScrollTranscript(G.scrollY * elapsed * 10)
+		ScrollTranscript(G.scrollY * elapsed * 5) -- in wheel notches: about a screen a second
 	end
 	-- Keep the cursor on something that still exists after list rebuilds.
 	if G.selected and not Usable(G.selected) then G:SelectDefault() end

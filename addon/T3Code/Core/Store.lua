@@ -292,7 +292,9 @@ end
 
 function ns.StripMarkup(text)
 	text = tostring(text or "")
-	text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("||", "|")
+	-- "||" is a literal bar, so it is set aside while the markup around it goes:
+	-- colours, and pictures ("|T<file>:0|t").
+	text = text:gsub("||", "\1"):gsub("|T.-|t", ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("\1", "|")
 	return text
 end
 

@@ -323,6 +323,10 @@ function T:Flags()
 	if self.signals ~= "ok" then f = f .. "s" end
 	if ns.IsQuiet() then f = f .. "q" end
 	if self.attending then f = f .. "a" end
+	-- This addon draws a message block by block, so the bridge can send blocks.
+	f = f .. "b"
+	-- Its fixed-width font loaded, so code blocks can keep arrows and box drawing.
+	if ns.Transcript and ns.Transcript:HasMono() then f = f .. "m" end
 	return f
 end
 

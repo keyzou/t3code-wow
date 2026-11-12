@@ -293,7 +293,7 @@ function M:CreateButtonBar(f)
 				if v.msgs[i].r == "a" then last = v.msgs[i] break end
 			end
 		end
-		if last then ns.Speak(last.t, ns.viewId, last.n) end
+		if last then ns.Speak(ns.Transcript.PlainText(last), ns.viewId, last.n) end
 	end)
 	bar.Speak:SetPoint("LEFT", bar.Mic, "RIGHT", 6, 0)
 

@@ -11,6 +11,8 @@
 	<!-- One template per kind of list row: ScrollBox recycles rows per template, so
 	     sharing a plain "Frame" between kinds would leave one kind's text on another. -->
 	<Frame name="T3CodeMessageRowTemplate" virtual="true"/>
+	<Frame name="T3CodeBlockRowTemplate" virtual="true"/>
+	<Frame name="T3CodeTableRowTemplate" virtual="true"/>
 	<Frame name="T3CodeNoteRowTemplate" virtual="true"/>
 	<Button name="T3CodeOptionRowTemplate" virtual="true"/>
 	<Button name="T3CodeThreadRowTemplate" virtual="true"/>

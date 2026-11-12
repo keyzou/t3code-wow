@@ -15,7 +15,7 @@ bridge.t3.start();
 await new Promise((r) => setTimeout(r, 2500));
 const threads = [...bridge.t3.threads.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 const viewId = viewArg === 'first' ? threads[0]?.id : viewArg;
-bridge.client = { session: 'test', ui: 'test', seq: 1, ackedSeq: -1, flags: 'o', view: viewId, slotNext: 1 };
+bridge.client = { session: 'test', ui: 'test', seq: 1, ackedSeq: -1, flags: 'obm', view: viewId, slotNext: 1 };
 for (const t of threads.slice(0, 6)) await bridge.refreshView(t.id, true);
 await bridge.refreshView(viewId, true);
 const snap = { v: 1, gen: Date.now(), now: Math.floor(Date.now() / 1000), nextSig: 2, ack: { ui: 'test', seq: 1 }, key: bridge.stripKeys.hex, ...bridge.buildSnapshot() };

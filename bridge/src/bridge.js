@@ -23,7 +23,7 @@ import { snoozeChoices, snoozedUntil, parseCustomSnooze, describeWhen } from './
 import { Voice } from './voice.js';
 import { OmarchyUsage, mergeUsage } from './usage.js';
 import { findWowProcess, processKey } from './wow.js';
-import { markdownToWow, markdownToSpeech, firstLine, escapeWow } from './format.js';
+import { markdownToWow, markdownToBlocks, blocksToWire, blocksToWow, markdownToSpeech, firstLine, escapeWow } from './format.js';
 import { loadOrCreateKey, deriveKeys, open as openSealed, ENCRYPTED_VERSION } from './strip-crypto.js';
 
 export const VERSION = '0.4.0';
@@ -164,6 +164,27 @@ export function runSummary(projection, now = Date.now()) {
 export function proposedPlan(projection) {
   const plan = [...(projection?.turnItems || [])].reverse().find((i) => i.type === 'proposed_plan' && i.markdown);
   return plan ? plan.markdown : null;
+}
+
+// The newest messages of a thread, as the addon draws them: the last 40 at most, and
+// fewer when they are long, because the game re-reads the whole snapshot on every
+// update. An addon that says it draws blocks (hello flag "b") gets each message as
+// blocks (`b`); an older one gets one font string (`t`).
+const MESSAGE_CHARS = { assistant: 8000, user: 2000 };
+
+export function viewMessages(messages, { blocks = false, mono = false } = {}) {
+  const msgs = (messages || []).filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text?.trim());
+  let budget = 60000;
+  const out = [];
+  for (let i = msgs.length - 1; i >= 0 && out.length < 40; i--) {
+    const m = msgs[i];
+    const parsed = markdownToBlocks(m.text, { maxChars: MESSAGE_CHARS[m.role] });
+    const body = blocks ? { b: blocksToWire(parsed, { mono }) } : { t: blocksToWow(parsed) };
+    budget -= blocks ? JSON.stringify(body.b).length : body.t.length;
+    if (budget < 0 && out.length > 0) break;
+    out.unshift({ r: m.role === 'user' ? 'u' : 'a', ...body, at: sec(m.createdAt), live: m.streaming || undefined, n: i + 1 });
+  }
+  return { msgs, out };
 }
 
 // How the game names a model: instance and slug, joined by a tab (neither contains one).
@@ -875,16 +896,9 @@ export class Bridge {
       const t = t3.threads.get(viewId);
       if (v?.projection) {
         const p = v.projection;
-        const msgs = (p.messages || []).filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text?.trim());
-        let budget = 60000;
-        const out = [];
-        for (let i = msgs.length - 1; i >= 0 && out.length < 40; i--) {
-          const m = msgs[i];
-          const text = markdownToWow(m.text, { maxChars: m.role === 'assistant' ? 4000 : 1500 });
-          budget -= text.length;
-          if (budget < 0 && out.length > 0) break;
-          out.unshift({ r: m.role === 'user' ? 'u' : 'a', t: text, at: sec(m.createdAt), live: m.streaming || undefined, n: i + 1 });
-        }
+        const blocks = this.client?.flags.includes('b');
+        const mono = this.client?.flags.includes('m');
+        const { msgs, out } = viewMessages(p.messages, { blocks, mono });
         // Each of these walks the whole turn, so ask once.
         const plan = t && threadStatus(t) === 'plan' ? proposedPlan(p) : null;
         const sum = runSummary(p);
@@ -895,7 +909,8 @@ export class Bridge {
           pending: pendingRequest(p) || undefined,
           act: t && threadStatus(t) === 'working' ? escapeWow(activityLabel(p) || 'Working') : undefined,
           err: t?.lastError ? escapeWow(String(t.lastError).slice(0, 300)) : undefined,
-          plan: plan ? markdownToWow(plan, { maxChars: 6000 }) : undefined,
+          plan: plan && !blocks ? markdownToWow(plan, { maxChars: 6000 }) : undefined,
+          pb: plan && blocks ? blocksToWire(markdownToBlocks(plan, { maxChars: 6000 }), { mono }) : undefined,
           sum: sum ? escapeWow(sum) : undefined,
           queued: (p.runs || []).filter((r) => r.status === 'queued').length || undefined,
           shots: this.shots.get(viewId)?.length || undefined,

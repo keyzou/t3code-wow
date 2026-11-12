@@ -91,6 +91,8 @@ C  id  verb  args…                      (one per queued command)
   - `g`: gamepad UI
   - `r`: read finished replies with the desktop voice
   - `s`: sound signals unavailable
+  - `b`: the addon draws a message block by block, so the bridge sends each message as blocks (`b`) instead of one font string (`t`)
+  - `m`: the addon loaded its fixed-width font, so code blocks keep the arrows and box-drawing characters that font has
 - Verbs:
   - `send`, `new`, `stop`
   - `model` (`threadId instanceId model [effort]`). `new` takes the same `instanceId model [effort]` after its text; without a model T3 Code's own default applies, and an empty `instanceId model` with an `effort` sets only the reasoning level on that default. `effort` is a level id from the model's list (`low`, `high`, …); without it the thread keeps the options last used with that model
@@ -129,7 +131,16 @@ tags, so all slots share one fixed fingerprint that matches nothing on CurseForg
 (checked with WowUp's own hashing code and a rescan).
 Each contains `Inbox.lua`, which assigns `T3Code_Inbox = { … }`. The bridge serializes
 plain data with `luaser.js`, so thread text can never become code. All text is escaped
-for WoW markup (`|` → `||`), then markdown is turned into colors and bullets.
+for WoW markup (`|` → `||`), then markdown is turned into blocks.
+
+**Messages are sent as blocks.** A font string has one font and can only change colour inside it, so `format.js` parses each message's markdown into blocks and the addon draws one row per block (`UI/Transcript.lua`): a paragraph, heading, list item, code block, quoted paragraph, rule or table. Each kind has its own font size and spacing, and rows this small keep scrolling even. Inside a block, emphasis is colour: bold is gold, italic a paler gold, code mint, links blue, and struck text grey between two `~`. A run has one colour, so of several styles one wins: struck, then bold, then code, link, italic. Bold code has a colour of its own, between the two. Headings and table headers are white and larger, and body text is drawn a little under white, so structure reads by size and brightness and emphasis by colour. Colour spans are never nested. Code blocks use a fixed-width font shipped in `Media/` (Noto Sans Mono, SIL Open Font License), and fall back to the game's font when the client can't load it. A link can't be followed in game, so a named link is followed by where it goes unless its name already says all of it (a web address shortened, a file as its folder, name and line; a name that gives the file but not the line, or the site but not the page, still gets the rest), and a bare address loses its scheme and, when long, its middle. Symbols and emoji the game's fonts lack would show as empty boxes: status marks (✅ ❌ ❓ ⚠) become the game's own small pictures (`|T…|t`), coloured circles and squares a bullet in that colour, arrows and the like a plain stand-in, and a few emoji the word they stand for. Any other emoji is dropped when it leads or ends a line of its block and shown as `[emoji]` inside a sentence or when it is all the block says, where it may carry the meaning. Code never changes silently: arrows, box drawing and shapes keep the way they are typed (`->`), any other symbol is written as its escape (`\u{2753}`, not `?`), and a code block keeps real arrows and box-drawing characters when the addon reports (flag `m`) that its fixed-width font loaded. An addon without the `b` flag gets one font string per message, with gold headings and gold bold. On the wire a block is a short array, because the game re-reads the snapshot on every update:
+
+```
+{"p", text}   {"h", level, text}   {"l", depth, marker, text}   {"c", depth, text}
+{"q", depth, text}   {"r"}   {"t", align, {{cell, …}, …}}
+```
+
+`marker` is `•`, `1.`, `[ ]`, `[x]`, or empty for a further paragraph of the item above. `align` has one of `l`, `c`, `r` per column, and a table's first row is its header. A message carries its blocks in `b`. An addon whose hello lacks the `b` flag gets the same blocks joined into one font string in `t`, as before.
 
 A publish works like this:
 

@@ -4,11 +4,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { Bridge, friendlyError, parseFrame, activityLabel, pendingRequest, runSummary, proposedPlan } from '../src/bridge.js';
+import { Bridge, friendlyError, parseFrame, activityLabel, pendingRequest, runSummary, proposedPlan, viewMessages } from '../src/bridge.js';
 import { holdOpen } from './hold-open.mjs';
 import { SlotBank, FileInUse, LONG_SILENT_WAV } from '../src/slots.js';
 import { luaValue } from '../src/luaser.js';
-import { markdownToWow, markdownToSpeech } from '../src/format.js';
+import { markdownToWow, markdownToSpeech, markdownToBlocks, blocksToWire } from '../src/format.js';
 import { RS, US } from '../src/codec.js';
 import { seal } from '../src/strip-crypto.js';
 import crypto from 'node:crypto';
@@ -556,8 +556,129 @@ test('markdown formatting', () => {
   assert.match(w, /\|\| pipe/);
   assert.match(w, /fn\(\)/);
   // Characters the game's fonts lack would show as boxes.
-  assert.equal(markdownToWow('game → bridge ✓ `a ≥ b` — done…'), 'game -> bridge OK |cffa8c7faa ≥ b|r — done…');
+  assert.equal(markdownToWow('game → bridge ✓ `a ≥ b` — done…'), 'game -> bridge |TInterface\\RaidFrame\\ReadyCheck-Ready:0|t |cff9ad8c9a ≥ b|r — done…');
+  // Code can't hold a picture, and a stand-in would read as different code: it keeps the escape.
+  assert.equal(markdownToWow('`✓ ok`'), '|cff9ad8c9\\u{2713} ok|r');
   assert.equal(markdownToSpeech('**Done**: see [docs](http://x)'), 'Done : see docs');
+});
+
+const wire = (md, opts) => blocksToWire(markdownToBlocks(md, opts));
+
+test('a message becomes one block per paragraph, heading, list item, code block, quote, rule and table', () => {
+  const md = [
+    '## Plan', '', 'Intro with **bold**.', '', '1. one', '   - nested', '2. two', '', '- [ ] todo', '- [x] done', '',
+    '```js', 'const a = 1;', '', 'b();', '```', '', '> quoted', '', '---', '', '| a | b |', '|:--|--:|', '| `x` | 2 |',
+  ].join('\n');
+  assert.deepEqual(wire(md), [
+    ['h', 2, 'Plan'],
+    ['p', 'Intro with |cffffd100bold|r.'],
+    ['l', 0, '1.', 'one'],
+    ['l', 1, '•', 'nested'],
+    ['l', 0, '2.', 'two'],
+    ['l', 0, '[ ]', 'todo'],
+    ['l', 0, '[x]', 'done'],
+    ['c', 0, 'const a = 1;\n\nb();'],
+    ['q', 1, 'quoted'],
+    ['r'],
+    ['t', 'lr', [['a', 'b'], ['|cff9ad8c9x|r', '2']]],
+  ]);
+});
+
+test('markdown the game would have shown raw', () => {
+  // A rule written with spaces is not a bullet.
+  assert.deepEqual(wire('a\n\n- - -\n\n* * *\n\nb'), [['p', 'a'], ['r'], ['r'], ['p', 'b']]);
+  // Backslash escapes, entities and a line break.
+  assert.deepEqual(wire('\\_\\_init\\_\\_ \\*x\\* &amp; &lt;b&gt;<br>next'), [['p', '__init__ *x* & <b>\nnext']]);
+  // Emphasis nests, and underscores inside a word are left alone.
+  assert.deepEqual(wire('**a *x* b** snake_case_name ~~gone~~'), [['p', '|cffffd100a x b|r snake_case_name |cff858585~gone~|r']]);
+  // Unpaired markers stay as written.
+  assert.deepEqual(wire('2 * 3 and a ** b'), [['p', '2 * 3 and a ** b']]);
+  // A fence closes only on its own kind and length, and what it holds is not formatted.
+  assert.deepEqual(wire('~~~\n**x** ```\n~~~\n````\n```\n````'), [['c', 0, '**x** ```'], ['c', 0, '```']]);
+  // Children indented by four spaces are one level down, not two.
+  assert.deepEqual(wire('- a\n    - b\n        - c\n- d'), [['l', 0, '•', 'a'], ['l', 1, '•', 'b'], ['l', 2, '•', 'c'], ['l', 0, '•', 'd']]);
+  // Code under a list item is indented with it; a pipe in code or escaped stays in its cell.
+  assert.deepEqual(wire('- a\n\n  ```\n  x\n  ```'), [['l', 0, '•', 'a'], ['c', 1, 'x']]);
+  assert.deepEqual(wire('| a | b |\n|---|---|\n| `x|y` | 1\\|2 |'), [['t', 'll', [['a', 'b'], ['|cff9ad8c9x||y|r', '1||2']]]]);
+  assert.deepEqual(wire('| a | b |\n|---|---|\n| `x\\|y` | 1 |'), [['t', 'll', [['a', 'b'], ['|cff9ad8c9x||y|r', '1']]]]);
+  // Links keep their text. A bare address loses its scheme; a long one keeps its host and its end.
+  assert.deepEqual(wire('See [docs](https://e.com/a_(b)) and https://github.com/o/r/pull/12/files#diff-1, ![shot](a.png) [r].\n\n[r]: https://x.dev'),
+    [['p', 'See |cff5fb0ffdocs|r|cff9d9d9d (e.com/a_(b))|r and |cff5fb0ffgithub.com/o/r/pull/12/files#diff-1|r, |cff9d9d9d[image: shot]|r |cff5fb0ffr|r|cff9d9d9d (x.dev)|r.']]);
+  assert.deepEqual(wire('https://github.com/example/shop/blob/main/packages/importer/src/parse/rows/quantity.test.ts#L120-L188'),
+    [['p', '|cff5fb0ffgithub.com/example/shop/…/parse/rows/quantity.test.ts#L120-L188|r']]);
+  // A named link shows where it goes unless the name already says all of it: a file as its folder, name and line.
+  assert.deepEqual(wire('[x.dev guide](https://x.dev/guide) [Transcript.lua:12](addon/UI/Transcript.lua:12) [the caller](/repo/src/cache.ts:87) [top](#top) [thread](t3-thread://v2/a/b)'),
+    [['p', '|cff5fb0ffx.dev guide|r |cff5fb0ffTranscript.lua:12|r |cff5fb0ffthe caller|r|cff9d9d9d (src/cache.ts:87)|r |cff5fb0fftop|r |cff5fb0ffthread|r']]);
+  // A name that leaves out the line, or names only the site, still gets the rest.
+  assert.deepEqual(wire('[rows.ts](/src/parse/rows.ts:42) [github.com](https://github.com/example/shop/pull/482)'),
+    [['p', '|cff5fb0ffrows.ts|r|cff9d9d9d (parse/rows.ts:42)|r |cff5fb0ffgithub.com|r|cff9d9d9d (github.com/example/shop/pull/482)|r']]);
+  // Of several styles one colour wins: struck (between tildes), then bold, then code or link. Bold code has its own.
+  assert.deepEqual(wire('`plain` **`key`** ~~old **way**~~'), [['p', '|cff9ad8c9plain|r |cffcdea70key|r |cff858585~old way~|r']]);
+  // A wrapped line that starts with a year is not a list; a footnote is not a link definition.
+  assert.deepEqual(wire('Up in\n2026. Done.\n\nSee[^1].\n\n[^1]: Source.'), [['p', 'Up in\n2026. Done.'], ['p', 'See[^1].'], ['p', '[^1]: Source.']]);
+  // A code block belongs to the item it is indented under, not to the deepest item open.
+  assert.deepEqual(wire('- a\n  - b\n\n  ```\n  x\n  ```\n\n  more\n- c'), [['l', 0, '•', 'a'], ['l', 1, '•', 'b'], ['c', 1, 'x'], ['l', 0, '', 'more'], ['l', 0, '•', 'c']]);
+  // A list or a heading inside a quote keeps its emphasis.
+  assert.deepEqual(wire('> ## Head\n> - **one** two'), [['q', 1, '|cffffd100Head|r'], ['q', 1, '• |cffffd100one|r two']]);
+});
+
+test('symbols the game cannot draw get a stand-in or are dropped', () => {
+  // A status mark is one of the game's pictures, a block arrow a gold marker, a keycap its digit.
+  assert.deepEqual(wire('❓ **Q1** 1️⃣ step 👍🏽 ok ➡️ go → on'), [['p', '|TInterface\\RaidFrame\\ReadyCheck-Waiting:0|t |cffffd100Q1|r 1 step +1 ok |cffffd100->|r go -> on']]);
+  // A coloured dot keeps its colour, and ends the colour around it rather than nesting in it.
+  assert.deepEqual(wire('**up 🟢 now**'), [['p', '|cffffd100up |r|cff3fdc3f•|r|cffffd100 now|r']]);
+  // An emoji with no stand-in is decoration at either end of a line, and a visible gap inside a sentence.
+  assert.deepEqual(wire('🚀 Shipped it 🎉\n\nPick 🍎 or 🍌\n\n- 🍎'), [['p', 'Shipped it'], ['p', 'Pick |cff9d9d9d[emoji]|r or |cff9d9d9d[emoji]|r'], ['l', 0, '•', '|cff9d9d9d[emoji]|r']]);
+  // The line is the block's, whatever its emphasis: an emoji in bold is still inside the sentence, or at its start.
+  assert.deepEqual(wire('Pick **🍎** or **🍌**.\n\n**🚀** Ship `it` 🎉'), [['p', 'Pick |cff9d9d9d[emoji]|r or |cff9d9d9d[emoji]|r.'], ['p', 'Ship |cff9ad8c9it|r']]);
+  // Code never changes: an arrow keeps the way it is typed, any other symbol is written as its escape.
+  assert.deepEqual(wire('`s = "❓"` `a → b`\n\n```\nr = "🚀" // ✓\n```'), [['p', '|cff9ad8c9s = "\\u{2753}"|r |cff9ad8c9a -> b|r'], ['c', 0, 'r = "\\u{1f680}" // \\u{2713}']]);
+  assert.deepEqual(wire('```\n├── src\n│   └── a.ts\n```'), [['c', 0, '||--- src\n||   `--- a.ts']]);
+  // An addon whose fixed-width font loaded draws arrows and box drawing itself; a tick it still can't.
+  assert.deepEqual(blocksToWire(markdownToBlocks('```\n├── src → out ✓\n```\n\n`a → b`'), { mono: true }), [['c', 0, '├── src → out \\u{2713}'], ['p', '|cff9ad8c9a -> b|r']]);
+  // A message that is nothing but an emoji still says that something was sent.
+  assert.equal(markdownToWow('🎉'), '|cff9d9d9d[emoji]|r');
+});
+
+test('colour spans are never nested, in blocks or in one font string', () => {
+  const md = '# T **b** `c` [l](u)\n\n> q **b** `c`\n\n**b `c` [l](u) b**\n\n| **h** `c` |\n|---|\n| x |';
+  const nested = /\|c[0-9a-f]{8}(?:(?!\|r).)*\|c[0-9a-f]{8}/s;
+  assert.doesNotMatch(markdownToWow(md), nested);
+  assert.doesNotMatch(JSON.stringify(wire(md)), nested);
+  assert.match(markdownToWow('# T `c` x'), /^\|cffffd100T \|r\|cff9ad8c9c\|r\|cffffd100 x\|r$/);
+});
+
+test('a long message is cut at a word, never inside markup, an emoji or a code fence', () => {
+  const md = '**' + 'word '.repeat(40).trim() + '** 😀😀😀😀\n\n```\n' + 'line of code\n'.repeat(30) + '```\n\ntail';
+  for (const maxChars of [50, 120, 203, 204, 205, 260, 400]) {
+    const out = wire(md, { maxChars });
+    const text = JSON.stringify(out);
+    assert.ok(!/[\ud800-\udbff](?![\udc00-\udfff])/.test(text), `half an emoji at ${maxChars}`);
+    assert.equal((text.match(/\|c[0-9a-f]{8}/g) || []).length, (text.match(/\|r/g) || []).length, `unbalanced colour at ${maxChars}`);
+    assert.deepEqual(out[out.length - 1], ['q', 0, '… (open the thread in T3 Code for the rest)']);
+    for (const b of out) if (b[0] === 'c') assert.match(b[2], /^(line of code\n?)+$/);
+  }
+  assert.deepEqual(wire('short', { maxChars: 50 }), [['p', 'short']]);
+});
+
+test('an addon that draws blocks gets blocks, an older one gets one font string', () => {
+  const messages = [
+    { role: 'user', text: 'do **it**', createdAt: '2026-11-08T00:00:00Z' },
+    { role: 'system', text: 'ignored', createdAt: '2026-11-08T00:00:01Z' },
+    { role: 'assistant', text: '# Done\n\n- a', createdAt: '2026-11-08T00:00:02Z', streaming: true },
+  ];
+  const blocks = viewMessages(messages, { blocks: true });
+  assert.deepEqual(blocks.out.map((m) => [m.r, m.b, m.t, m.n, m.live]), [
+    ['u', [['p', 'do |cffffd100it|r']], undefined, 1, undefined],
+    ['a', [['h', 1, 'Done'], ['l', 0, '•', 'a']], undefined, 2, true],
+  ]);
+  const legacy = viewMessages(messages);
+  assert.deepEqual(legacy.out.map((m) => [m.r, m.t, m.b]), [['u', 'do |cffffd100it|r', undefined], ['a', '|cffffd100Done|r\n\n|cffffd100•|r a', undefined]]);
+  // Long threads are cut to the newest messages that fit the snapshot.
+  const many = Array.from({ length: 60 }, (_, i) => ({ role: 'assistant', text: `m${i} ` + 'x'.repeat(3000), createdAt: '2026-11-08T00:00:00Z' }));
+  const cut = viewMessages(many, { blocks: true });
+  assert.ok(cut.out.length < 40 && cut.out.length > 10);
+  assert.equal(cut.out[cut.out.length - 1].n, 60);
 });
 
 test('run summary, plan text and approval details', () => {
