@@ -100,7 +100,7 @@ local DEFAULTS = {
 		dictateSend = false,
 		steerFollowUps = true,
 		quietInstances = true,
-		windowScale = "auto",
+		windowSize = "auto", -- auto | normal | large | xlarge | fill | custom (windowDims)
 		textSize = "medium",
 		padChord = "auto",
 	},
@@ -209,6 +209,12 @@ frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 frame:SetScript("OnEvent", ns.Safe(function(_, event, arg1, ...)
 	if event == "ADDON_LOADED" and arg1 == addonName then
 		T3CodeDB = T3CodeDB or {}
+		-- "Window size" used to zoom the window; it now sets its dimensions.
+		local saved = T3CodeDB.settings
+		if saved and saved.windowScale then
+			saved.windowSize = saved.windowSize or saved.windowScale
+			saved.windowScale = nil
+		end
 		ApplyDefaults(T3CodeDB, DEFAULTS)
 		ns.db = T3CodeDB
 		if not ns.db.session then ns.db.session = RandomToken(8) end

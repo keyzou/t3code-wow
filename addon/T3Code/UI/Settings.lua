@@ -77,8 +77,8 @@ function S:Create(page)
 	sizeLabel:SetPoint("TOPLEFT", 22, y - 12)
 	sizeLabel:SetText("Window size")
 	local size = UI.Dropdown(page, 240, function(value)
-		ns.db.settings.windowScale = value
-		ns.Main:ApplyScale()
+		ns.db.settings.windowSize = value
+		ns.Main:ApplySize()
 	end)
 	size:SetPoint("LEFT", sizeLabel, "RIGHT", 16, 0)
 	size:SetOptions({
@@ -86,7 +86,9 @@ function S:Create(page)
 		{ value = "normal", label = "Normal" },
 		{ value = "large", label = "Large" },
 		{ value = "xlarge", label = "Extra large" },
-	}, ns.db.settings.windowScale or "auto")
+		{ value = "fill", label = "Fill the screen" },
+		{ value = "custom", label = "Your size (drag the corner)" },
+	}, ns.db.settings.windowSize or "auto")
 	self.size = size
 	y = y - 40
 
@@ -147,7 +149,7 @@ function S:Refresh()
 	for _, cb in ipairs(self.checks) do cb:SetChecked(ns.db.settings[cb.key] and true or false) end
 	self.voice.value = ns.db.settings.tts
 	self.voice:Update()
-	self.size.value = ns.db.settings.windowScale or "auto"
+	self.size.value = ns.db.settings.windowSize or "auto"
 	self.size:Update()
 	self.text.value = ns.db.settings.textSize or "medium"
 	self.text:Update()

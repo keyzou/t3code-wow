@@ -761,7 +761,7 @@ ns:RegisterEvent("INPUT_DEVICE_INTERFACE_TRANSITION", function()
 		if G:IsActive() then G:StartCapture(f) else G:StopCapture(f) end
 		ns.Main:Refresh()
 	end
-	ns.Main:ApplyScale()
+	ns.Main:ApplySize()
 	ns.Transport:Touch()
 end)
 

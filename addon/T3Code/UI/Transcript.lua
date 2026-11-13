@@ -467,7 +467,8 @@ function T:Create(parent, header, composer)
 	ScrollUtil.InitScrollBoxListWithScrollBar(scrollBox, scrollBar, view)
 	self.scrollBox, self.scrollBar, self.view = scrollBox, scrollBar, view
 
-	scrollBox:SetScript("OnSizeChanged", function() T:Relayout() end)
+	-- While the window is being dragged to a new size, the grip re-wraps once on release.
+	scrollBox:SetScript("OnSizeChanged", function() if not ns.Main.sizing then T:Relayout() end end)
 end
 
 -- What the conversation hangs under: the header, or the family bar while it's shown.

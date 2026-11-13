@@ -513,11 +513,28 @@ check(ns.Transport:Flags():find("a", 1, true) == nil, "not attending after 90s i
 ns.SelfTest()
 check(true, "self-test ran")
 
--- Window size
-ns.db.settings.windowScale = "xlarge"
-ns.Main:ApplyScale()
-check(true, "window scale applied")
-ns.db.settings.windowScale = "auto"
+-- Window size: it grows the window and never zooms it, so text keeps its own size,
+-- and it stays inside the screen.
+do
+	local f = ns.Main.frame
+	UIParent._w, UIParent._h = 1920, 1080
+	ns.db.settings.windowSize = "xlarge"
+	ns.Main:ApplySize()
+	check(f:GetScale() == 1, "a larger window is not zoomed")
+	check(f:GetWidth() == 1222 and f:GetHeight() == 832, "extra large is 1222x832, got " .. f:GetWidth() .. "x" .. f:GetHeight())
+	UIParent._w, UIParent._h = 1365, 768
+	ns.Main:ApplySize()
+	check(f:GetHeight() == 688, "extra large shrinks to fit a short screen, got " .. f:GetHeight())
+	ns.db.settings.windowSize = "fill"
+	ns.Main:ApplySize()
+	check(f:GetWidth() == 1245 and f:GetHeight() == 688, "fill leaves a margin, got " .. f:GetWidth() .. "x" .. f:GetHeight())
+	ns.db.settings.windowSize, ns.db.settings.windowDims = "custom", { 300, 5000 }
+	ns.Main:ApplySize()
+	check(f:GetWidth() == 820 and f:GetHeight() == 688, "a dragged size stays within bounds, got " .. f:GetWidth() .. "x" .. f:GetHeight())
+	ns.db.settings.windowSize, ns.db.settings.windowDims = "auto", nil
+	UIParent._w, UIParent._h = nil, nil
+	ns.Main:ApplySize()
+end
 
 -- Transitions -> toast
 local t = ns.Store.data.threads[1]

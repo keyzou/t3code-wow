@@ -7,7 +7,8 @@ local UI = ns.UI
 local M = {}
 ns.Main = M
 
-local WIDTH, HEIGHT = 940, 640
+local WIDTH, HEIGHT = 940, 640 -- the Normal size
+local MIN_W, MIN_H = 820, 520
 local LIST_W = 300
 local COMPOSER_H = 92
 
@@ -40,6 +41,7 @@ function M:Create()
 	f:SetFrameStrata("HIGH")
 	f:SetToplevel(true)
 	f:SetMovable(true)
+	f:SetResizable(true)
 	f:SetClampedToScreen(true)
 	f:EnableMouse(true)
 	f:Hide()
@@ -57,8 +59,7 @@ function M:Create()
 	drag:SetScript("OnDragStart", function() f:StartMoving() end)
 	drag:SetScript("OnDragStop", function()
 		f:StopMovingOrSizing()
-		local point, _, rel, x, y = f:GetPoint()
-		ns.db.settings.windowPoint = { point, rel, x, y }
+		M:SavePoint()
 	end)
 	local wp = ns.db.settings.windowPoint
 	if wp then
@@ -68,12 +69,12 @@ function M:Create()
 
 	-- Subtitle: the thread you're looking at, and the link status under it.
 	f.Subtitle = UI.Text(f, "GameFontNormalLarge", "CENTER")
-	f.Subtitle:SetPoint("TOP", 20, -30)
-	f.Subtitle:SetWidth(WIDTH - 220)
+	f.Subtitle:SetPoint("TOPLEFT", 130, -30)
+	f.Subtitle:SetPoint("TOPRIGHT", -90, -30)
 	f.Subtitle:SetWordWrap(false)
 	f.Status = UI.Text(f, "GameFontGreenSmall", "CENTER")
-	f.Status:SetPoint("TOP", f.Subtitle, "BOTTOM", 0, -2)
-	f.Status:SetWidth(WIDTH - 220)
+	f.Status:SetPoint("TOPLEFT", f.Subtitle, "BOTTOMLEFT", 0, -2)
+	f.Status:SetPoint("TOPRIGHT", f.Subtitle, "BOTTOMRIGHT", 0, -2)
 
 	-- Collapse the thread list (arrow under the close button).
 	f.SidebarToggle = UI.IconButton(f, "common-icon-backarrow", 24, "Hide the thread list", function() M:ToggleSidebar() end)
@@ -122,7 +123,8 @@ function M:Create()
 		ns:Fire("WindowHidden", f)
 	end))
 
-	self:ApplyScale()
+	self:CreateSizeGrip(f)
+	self:ApplySize()
 	ns.Usage:Create(f.Pages.usage)
 	ns.Settings:Create(f.Pages.settings)
 	self:ShowPage("threads")
@@ -308,7 +310,7 @@ function M:CreateButtonBar(f)
 	UI.Tooltip(bar.Speak, nil, "Read the latest reply aloud.")
 
 	bar.Send = UI.Button(f, "Send", 110, function() M:Send() end)
-	bar.Send:SetPoint("BOTTOMRIGHT", -6, 4)
+	bar.Send:SetPoint("BOTTOMRIGHT", -22, 4) -- clear of the size grip
 	f.Bar = bar
 end
 
@@ -650,7 +652,7 @@ function M:Report(note)
 		for _, e in ipairs(b.envs) do table.insert(m, e.label .. "=" .. e.state) end
 		table.insert(lines, "machines " .. table.concat(m, ", "))
 	end
-	table.insert(lines, string.format("page %s, mode %s, gamepad %s, window scale %.2f", self.page, self.mode, tostring(ns.Gamepad:IsActive()), self.frame:GetScale() or 1))
+	table.insert(lines, string.format("page %s, mode %s, gamepad %s, window %dx%d (%s)", self.page, self.mode, tostring(ns.Gamepad:IsActive()), self.frame:GetWidth() or 0, self.frame:GetHeight() or 0, tostring(ns.db.settings.windowSize)))
 	local errs = ns.db.errors or {}
 	for i = math.max(1, #errs - 2), #errs do
 		table.insert(lines, "error " .. date("%H:%M:%S", errs[i].t) .. ": " .. errs[i].msg)
@@ -663,14 +665,92 @@ function M:Report(note)
 	self.composer:SetFocus()
 end
 
-local SCALES = { normal = 1, large = 1.15, xlarge = 1.3 }
+---------------------------------------------------------------------------
+-- Window size
 
-function M:ApplyScale()
-	if not self.frame then return end
-	local pref = ns.db.settings.windowScale or "auto"
-	local scale = SCALES[pref] or ((ns.Gamepad and ns.Gamepad:IsActive()) and 1.15 or 1)
-	self.frame:SetScale(scale)
+-- The larger sizes cover what the old zoom did (x1.15, x1.3), but they grow the
+-- window instead of zooming it, so text keeps the size chosen under Text size.
+local SIZES = { normal = 1, large = 1.15, xlarge = 1.3 }
+-- Room left around the window at its largest: the side tabs stick out on the right,
+-- and some of the game should stay in view.
+local MARGIN_X, MARGIN_Y = 60, 40
+
+-- The largest window the screen holds, in UIParent's units.
+function M:MaxSize()
+	local w = (UIParent:GetWidth() or WIDTH) - MARGIN_X * 2
+	local h = (UIParent:GetHeight() or HEIGHT) - MARGIN_Y * 2
+	return math.max(MIN_W, math.floor(w)), math.max(MIN_H, math.floor(h))
 end
+
+function M:WindowSize()
+	local s = ns.db.settings
+	local pref = s.windowSize or "auto"
+	local maxW, maxH = self:MaxSize()
+	if pref == "fill" then return maxW, maxH end
+	local w, h
+	if pref == "custom" and type(s.windowDims) == "table" then
+		w, h = s.windowDims[1] or WIDTH, s.windowDims[2] or HEIGHT
+	else
+		local k = SIZES[pref] or ((ns.Gamepad and ns.Gamepad:IsActive()) and SIZES.large or 1)
+		w, h = WIDTH * k, HEIGHT * k
+	end
+	w = math.max(MIN_W, math.min(math.floor(w), maxW))
+	h = math.max(MIN_H, math.min(math.floor(h), maxH))
+	return w, h
+end
+
+function M:ApplySize()
+	local f = self.frame
+	if not f or self.sizing then return end
+	local maxW, maxH = self:MaxSize()
+	f:SetScale(1)
+	f:SetResizeBounds(MIN_W, MIN_H, maxW, maxH)
+	f:SetSize(self:WindowSize())
+	if ns.db.settings.windowSize == "fill" then
+		f:ClearAllPoints()
+		f:SetPoint("CENTER", UIParent, "CENTER", -10, 0) -- -10: the side tabs widen it on the right
+	end
+end
+
+function M:SavePoint()
+	local point, _, rel, x, y = self.frame:GetPoint()
+	ns.db.settings.windowPoint = { point, rel, x, y }
+end
+
+-- Drag the bottom-right corner to any size; it's kept as the "custom" size. The
+-- transcript re-wraps once, on release: measuring every message on every frame of
+-- the drag would stutter on a long thread.
+function M:CreateSizeGrip(f)
+	local grip = CreateFrame("Button", nil, f)
+	grip:SetSize(16, 16)
+	grip:SetPoint("BOTTOMRIGHT", -3, 3)
+	grip:SetFrameLevel(f:GetFrameLevel() + 20)
+	grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
+	grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight")
+	grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down")
+	local function Stop()
+		if not M.sizing then return end
+		M.sizing = false
+		f:StopMovingOrSizing()
+		local w, h = f:GetSize()
+		ns.db.settings.windowDims = { math.floor(w + 0.5), math.floor(h + 0.5) }
+		ns.db.settings.windowSize = "custom"
+		M:SavePoint()
+		ns.Transcript:Relayout()
+		ns.Settings:Refresh()
+	end
+	grip:SetScript("OnMouseDown", function(_, button)
+		if button ~= "LeftButton" then return end
+		M.sizing = true
+		f:StartSizing("BOTTOMRIGHT")
+	end)
+	grip:SetScript("OnMouseUp", Stop)
+	grip:SetScript("OnHide", Stop)
+	f.SizeGrip = grip
+end
+
+ns:RegisterEvent("DISPLAY_SIZE_CHANGED", function() M:ApplySize() end)
+ns:RegisterEvent("UI_SCALE_CHANGED", function() M:ApplySize() end)
 
 function M:ToggleDictation()
 	if self.dictating then
